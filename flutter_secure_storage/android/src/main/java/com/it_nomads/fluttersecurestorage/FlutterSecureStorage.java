@@ -34,6 +34,8 @@ public class FlutterSecureStorage {
     private StorageCipher storageCipher;
     private StorageCipherFactory storageCipherFactory;
     private Boolean failedToUseEncryptedSharedPreferences = false;
+    // The options `preferences` was prepared for, see ensureInitialized().
+    private String initializedFor;
 
     public FlutterSecureStorage(Context context) {
         applicationContext = context.getApplicationContext();
@@ -128,9 +130,10 @@ public class FlutterSecureStorage {
 
     @SuppressWarnings({"ConstantConditions"})
     private void ensureInitialized() {
-        // Check if already initialized.
-        // TODO: Disable for now because this will break mixed usage of secureSharedPreference
-//        if (preferences != null) return;
+        // Re-creating EncryptedSharedPreferences unwraps its keys through the Android Keystore, which
+        // takes tens of milliseconds per call, so only do it again when the options it depends on
+        // change. Upstream dropped the check entirely to keep mixed option sets working.
+        if (preferences != null && initializationKey().equals(initializedFor)) return;
 
         if (options.containsKey("sharedPreferencesName") && !((String) options.get("sharedPreferencesName")).isEmpty()) {
             SHARED_PREFERENCES_NAME = (String) options.get("sharedPreferencesName");
@@ -164,6 +167,17 @@ public class FlutterSecureStorage {
         } else {
             preferences = nonEncryptedPreferences;
         }
+        initializedFor = initializationKey();
+    }
+
+    private String initializationKey() {
+        return optionValue("sharedPreferencesName") + '\u0000' + optionValue("preferencesKeyPrefix")
+                + '\u0000' + getUseEncryptedSharedPreferences();
+    }
+
+    private String optionValue(String key) {
+        Object value = options.get(key);
+        return value == null ? "" : value.toString();
     }
 
     private void initStorageCipher(SharedPreferences source) throws Exception {
